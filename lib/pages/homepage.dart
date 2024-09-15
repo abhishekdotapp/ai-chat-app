@@ -1,8 +1,11 @@
-import 'package:flutter/gestures.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:dash_chat_2/dash_chat_2.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
+import 'package:image_picker/image_picker.dart';
 
 class home_page extends StatefulWidget {
   const home_page({super.key});
@@ -16,7 +19,7 @@ class _home_pageState extends State<home_page> {
   ChatUser edith = ChatUser(
     id: '1',
     firstName: 'edith',
-    profileImage: 'https://unsplash.com/photos/black-and-green-full-face-helmet-on-white-wooden-table-IGa3Md8wP6g',
+    profileImage: "https://seeklogo.com/images/G/google-gemini-logo-A5787B2669-seeklogo.com.png" ,
   );
   List<ChatMessage> messages = [];
   final Gemini gemini = Gemini.instance;
@@ -40,7 +43,17 @@ class _home_pageState extends State<home_page> {
 
   Widget _buildUI() {
     return DashChat(
-        currentUser: currentUser, onSend: _sendMessage, messages: messages);
+        inputOptions: InputOptions(trailing: [
+          IconButton(
+            onPressed: _sendMediaMessage,
+            icon: const Icon(
+              Icons.image,
+            ),
+          ),
+        ]),
+        currentUser: currentUser,
+        onSend: _sendMessage,
+        messages: messages);
   }
 
   void _sendMessage(ChatMessage chatMessage) {
@@ -49,12 +62,22 @@ class _home_pageState extends State<home_page> {
     });
     try {
       String question = chatMessage.text;
-      gemini.streamGenerateContent(question).listen((event) {
+      List<Uint8List>? images;
+      if (chatMessage.medias?.isNotEmpty ?? false) {
+        images = [
+          File(chatMessage.medias!.first.url).readAsBytesSync(),
+        ];
+      }
+      gemini.streamGenerateContent(question, images: images).listen((event) {
         ChatMessage? lastMessage = messages.firstOrNull;
         if (lastMessage != null && lastMessage.user == edith) {
+          String response = event.content?.parts?.fold(
+                  '', (previous, current) => "$previous ${current.text}") ??
+              '';
+          lastMessage.text += response;
         } else {
-          String response = event.content?.parts
-                  ?.fold('', (previous, current) => "$previous$current") ??
+          String response = event.content?.parts?.fold(
+                  '', (previous, current) => "$previous ${current.text}") ??
               '';
           ChatMessage message = ChatMessage(
               user: edith, createdAt: DateTime.now(), text: response);
@@ -65,6 +88,22 @@ class _home_pageState extends State<home_page> {
       });
     } catch (e) {
       print(e);
+    }
+  }
+
+  void _sendMediaMessage() async {
+    ImagePicker picker = ImagePicker();
+    XFile? file = await picker.pickImage(source: ImageSource.gallery);
+    if (file != null) {
+      ChatMessage chatMessage = ChatMessage(
+        user: currentUser,
+        createdAt: DateTime.now(),
+        text: 'describe the image',
+        medias: [
+          ChatMedia(url: file.path, fileName: '', type: MediaType.image)
+        ],
+      );
+      _sendMessage(chatMessage);
     }
   }
 }
